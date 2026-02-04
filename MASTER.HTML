@@ -200,7 +200,7 @@
     }, 1000);
 
     window.processPayout = function() {
-        if (!confirm("Vyplatiť sponzorstvo?")) return;
+        //if (!confirm("Vyplatiť sponzorstvo?")) return;
 
         Object.entries(buildingConfigs).forEach(([bKey, bCfg]) => {
             const scores = influenceData[bKey] || {};
