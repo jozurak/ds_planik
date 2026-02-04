@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Dobré skutky</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 1200px; margin: auto; }
+        h1, h2, h3 { text-align: center; color: #2c3e50; }
+
+        .stats-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin-bottom: 20px; overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; min-width: 600px; }
+        th, td { padding: 12px; border-bottom: 1px solid #eee; text-align: center; }
+        th { background: #007bff; color: white; }
+        .team-row:hover { background: #f8f9fa; }
+
+        .controls { background: #fff; padding: 20px; border-radius: 12px; margin-bottom: 20px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; align-items: center; border: 2px solid #007bff; }
+        input, select, button { padding: 10px; border-radius: 6px; border: 1px solid #ccc; font-size: 1rem; }
+        button { background: #007bff; color: white; cursor: pointer; border: none; font-weight: bold; }
+        button:hover { background: #0056b3; }
+
+        .buildings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 40px; }
+        .building-card { background: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-top: 5px solid #17a2b8; }
+        .building-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; margin-bottom: 10px; padding-bottom: 5px; }
+        .reward-info { font-size: 0.8rem; color: #666; font-style: italic; }
+        
+        .influence-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; font-size: 0.9rem; }
+        .influence-btns { display: flex; gap: 5px; align-items: center; }
+        .btn-sm { padding: 2px 8px; font-size: 0.8rem; }
+        .score-val { font-weight: bold; min-width: 25px; text-align: center; }
+
+        .payout-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #2c3e50; color: white; padding: 15px; display: flex; justify-content: center; gap: 20px; align-items: center; box-shadow: 0 -5px 15px rgba(0,0,0,0.2); }
+        .timer { font-size: 1.2rem; font-weight: bold; padding: 5px 15px; border-radius: 5px; }
+        .timer.urgent { background: #dc3545; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0.7; } }
+        .btn-payout { background: #28a745; font-size: 1.1rem; padding: 10px 30px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🏆 Administrácia Dobrých Skutkov</h1>
+
+    <div class="stats-card">
+        <h3>Aktuálny stav vo Firebase</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Družinka</th>
+                    <th>Energia</th>
+                    <th>Zdravie</th>
+                    <th>Rýchlosť</th>
+                    <th>Skutky (+)</th>
+                    <th>Zlé (-)</th>
+                </tr>
+            </thead>
+            <tbody id="stats-body"></tbody>
+        </table>
+    </div>
+
+    <div class="controls">
+        <strong>Upraviť:</strong>
+        <select id="edit-team">
+            <option value="druzinka1">Družinka 1</option>
+            <option value="druzinka2">Družinka 2</option>
+            <option value="druzinka3">Družinka 3</option>
+            <option value="druzinka4">Družinka 4</option>
+            <option value="druzinka5">Družinka 5</option>
+            <option value="druzinka6">Družinka 6</option>
+        </select>
+        <select id="edit-stat">
+            <option value="energia">Energia</option>
+            <option value="zdravie">Zdravie</option>
+            <option value="rychlost">Rýchlosť</option>
+            <option value="skutky">Dobré skutky</option>
+            <option value="zle">Zlé skutky</option>
+        </select>
+        <input type="number" id="edit-val" placeholder="Hodnota" style="width: 100px;">
+        <button onclick="manualUpdate()">Odoslať zmenu</button>
+    </div>
+
+    <h2>🏙️ Prieskum a vplyv v budovách</h2>
+    <div class="buildings-grid" id="buildings-container"></div>
+</div>
+
+<div class="payout-bar">
+    <div id="timer-display" class="timer">Posledná výplata: --:--</div>
+    <button class="btn-payout" onclick="processPayout()">💰 VYPLATIŤ SPONZORSTVO</button>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getDatabase, ref, onValue, update } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyBGSfkbYt7tUdyT05BtuLfrDP-gMUmEIp0",
+        authDomain: "dobre-skutky.firebaseapp.com",
+        databaseURL: "https://dobre-skutky-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "dobre-skutky"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    const teamIds = ["druzinka1", "druzinka2", "druzinka3", "druzinka4", "druzinka5", "druzinka6"];
+    let firebaseData = {};
+
+    const buildingConfigs = {
+        "bytovka": { label: "Bytovky", reward: { skutky: 5 } },
+        "Dom": { label: "Rodinné domy", reward: { skutky: 6 } },
+        "kostol": { label: "Kostoly", reward: { zle: -3 } },
+        "Krcma": { label: "Krčmy", reward: { zle: 2 } },
+        "Obchod": { label: "Obchody", reward: { energia: 15, zdravie: 2 } },
+        "Skola": { label: "Školy", reward: { rychlost: 0.1 } },
+        "Pofiderny_podnik": { label: "Nočné podniky", reward: { zle: 3 } },
+        "Nemocnica": { label: "Nemocnice", reward: { zdravie: 5 } },
+        "Zrúcanina": { label: "Zrúcaniny", reward: { zdravie: 0 } },
+        "zoo": { label: "ZOO", reward: { energia: 9 } },
+        "divadlo": { label: "Divadlá", reward: { zdravie: 3 } },
+        "agrochov": { label: "Agrochov", reward: { zdravie: -2, energia: 25 } }
+    };
+
+    let influenceData = JSON.parse(localStorage.getItem('building_influence')) || {};
+
+    teamIds.forEach(id => {
+        onValue(ref(db, 'druzinky/' + id), (snapshot) => {
+            firebaseData[id] = snapshot.val() || { energia: 0, zdravie: 0, rychlost: 0, skutky: 0, zle: 0 };
+            renderStatsTable();
+        });
+    });
+
+    function renderStatsTable() {
+        const tbody = document.getElementById('stats-body');
+        tbody.innerHTML = '';
+        teamIds.forEach(id => {
+            const d = firebaseData[id];
+            tbody.innerHTML += `
+                <tr class="team-row">
+                    <td><strong>${id}</strong></td>
+                    <td>${Number(d.energia || 0).toFixed(1)}</td>
+                    <td>${Number(d.zdravie || 0).toFixed(1)}</td>
+                    <td>${Number(d.rychlost || 0).toFixed(1)}</td>
+                    <td>${Number(d.skutky || 0).toFixed(1)}</td>
+                    <td>${Number(d.zle || 0).toFixed(1)}</td>
+                </tr>`;
+        });
+    }
+
+    window.manualUpdate = function() {
+        const team = document.getElementById('edit-team').value;
+        const stat = document.getElementById('edit-stat').value;
+        const val = parseFloat(document.getElementById('edit-val').value);
+        if (isNaN(val)) return alert("Zadaj číslo!");
+        const currentVal = (firebaseData[team] && firebaseData[team][stat]) ? firebaseData[team][stat] : 0;
+        update(ref(db, `druzinky/${team}`), { [stat]: currentVal + val });
+    };
+
+    function renderBuildings() {
+        const container = document.getElementById('buildings-container');
+        container.innerHTML = '';
+        Object.entries(buildingConfigs).forEach(([key, cfg]) => {
+            let card = `<div class="building-card">
+                <div class="building-header">
+                    <strong>${cfg.label}</strong>
+                    <span class="reward-info">${JSON.stringify(cfg.reward).replace(/["{}]/g, '')}</span>
+                </div>`;
+            teamIds.forEach(teamId => {
+                const score = (influenceData[key] && influenceData[key][teamId]) ? influenceData[key][teamId] : 0;
+                card += `
+                    <div class="influence-row">
+                        <span>${teamId}</span>
+                        <div class="influence-btns">
+                            <button class="btn-sm" onclick="changeInfluence('${key}', '${teamId}', -1)">-</button>
+                            <span class="score-val">${score}</span>
+                            <button class="btn-sm" onclick="changeInfluence('${key}', '${teamId}', 1)">+</button>
+                        </div>
+                    </div>`;
+            });
+            card += `</div>`;
+            container.innerHTML += card;
+        });
+    }
+
+    window.changeInfluence = function(building, team, delta) {
+        if (!influenceData[building]) influenceData[building] = {};
+        influenceData[building][team] = (influenceData[building][team] || 0) + delta;
+        if (influenceData[building][team] < 0) influenceData[building][team] = 0;
+        localStorage.setItem('building_influence', JSON.stringify(influenceData));
+        renderBuildings();
+    };
+
+    let lastPayout = localStorage.getItem('last_payout_time') || Date.now();
+    setInterval(() => {
+        const diffSec = Math.floor((Date.now() - lastPayout) / 1000);
+        const display = document.getElementById('timer-display');
+        display.innerText = `Posledná výplata pred: ${Math.floor(diffSec/60)}m ${diffSec%60}s`;
+        if (diffSec >= 300) display.classList.add('urgent');
+        else display.classList.remove('urgent');
+    }, 1000);
+
+    window.processPayout = function() {
+        if (!confirm("Vyplatiť sponzorstvo?")) return;
+
+        Object.entries(buildingConfigs).forEach(([bKey, bCfg]) => {
+            const scores = influenceData[bKey] || {};
+            let maxScore = 0;
+            let winners = [];
+
+            // 1. Zisťujeme, aké je najvyššie dosiahnuté skóre (musí byť > 0)
+            Object.entries(scores).forEach(([tId, val]) => {
+                if (val > maxScore) {
+                    maxScore = val;
+                }
+            });
+
+            // 2. Ak je niekto s nenulovým skóre, nájdeme všetkých s týmto maximom
+            if (maxScore > 0) {
+                winners = Object.keys(scores).filter(tId => scores[tId] === maxScore);
+                const count = winners.length;
+
+                winners.forEach(winner => {
+                    let updates = {};
+                    // 3. Prechádzame všetky odmeny v budove (môže ich byť viac)
+                    Object.entries(bCfg.reward).forEach(([stat, totalValue]) => {
+                        const share = totalValue / count; // Rovnomerné delenie medzi víťazov
+                        const current = (firebaseData[winner] && firebaseData[winner][stat]) ? firebaseData[winner][stat] : 0;
+                        updates[stat] = current + share;
+                    });
+                    
+                    if (Object.keys(updates).length > 0) {
+                        update(ref(db, `druzinky/${winner}`), updates);
+                    }
+                });
+            }
+        });
+
+        lastPayout = Date.now();
+        localStorage.setItem('last_payout_time', lastPayout);
+        alert("Sponzorstvo vyplatené a rozdelené!");
+    };
+
+    renderBuildings();
+</script>
+</body>
+</html>

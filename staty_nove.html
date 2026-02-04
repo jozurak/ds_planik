@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dobré skutky plň!</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; display: flex; justify-content: center; padding: 20px; }
+        .card { background: white; padding: 25px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 600px; }
+        h2, h3 { color: #333; text-align: center; }
+        
+        .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 15px; }
+        .stat-box { padding: 10px; background: #e9ecef; border-radius: 8px; text-align: center; border: 1px solid #dee2e6; }
+        .stat-box.cloud { background: #e3f2fd; border-color: #90caf9; } /* Odlišené cloud staty */
+        .stat-box span { display: block; font-size: 1.3rem; font-weight: bold; color: #007bff; }
+        
+        .controls { display: flex; flex-direction: column; gap: 10px; margin: 20px 0; }
+        input { padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 1rem; outline: none; transition: 0.3s; }
+        input:focus { border-color: #007bff; }
+        
+        .btn-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 8px; }
+        button { padding: 10px; border: none; border-radius: 6px; cursor: pointer; transition: 0.2s; background: #007bff; color: white; font-weight: bold; }
+        button:hover { opacity: 0.9; transform: translateY(-1px); }
+        .btn-step { background: #28a745; width: 100%; font-size: 1.2rem; margin-bottom: 20px; }
+        .btn-cloud { background: #17a2b8; }
+#keys-list { list-style: none; padding: 0; }
+
+#keys-list li { 
+    background: #fff; 
+    margin: 5px 0; 
+    padding: 8px; 
+    /*border-left: 4px solid #007bff; */
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+        .food-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .food-btn { background: #6c757d; font-size: 0.85rem; }
+        
+        .info-bar { background: #fff3cd; padding: 8px; border-radius: 5px; font-size: 0.8rem; margin-bottom: 15px; text-align: center; border: 1px solid #ffeeba; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <div id="team-display" class="info-bar">Načítavam družinku...</div>
+    
+    <div class="stats">
+        <div class="stat-box">Energia<span id="val-energia">0</span></div>
+        <div class="stat-box">Zdravie<span id="val-zdravie">0</span></div>
+        <div class="stat-box">Rýchlosť<span id="val-rychlost">0</span></div>
+    </div>
+    
+    <div class="stats">
+        <div class="stat-box" style="background: #d4edda;">Možné kroky<span id="val-max-kroky">0</span></div>
+        <div class="stat-box cloud">Dobré skutky<span id="val-skutky">0</span></div>
+        <div class="stat-box cloud">Zlé skutky<span id="val-zle">0</span></div>
+    </div>
+
+    <button class="btn-step" onclick="urobKrok()">Urobiť krok</button>
+
+    <div class="controls">
+        <input type="number" id="input-hodnota" placeholder="Zadaj množstvo (napr. 5)">
+        <div class="btn-grid">
+            <button onclick="zmenStat('energia')">+ E</button>
+            <button onclick="zmenStat('zdravie')">+ Z</button>
+            <button onclick="zmenStat('rychlost')">+ R</button>
+        </div>
+        <div class="btn-grid">
+            <button class="btn-cloud" style="grid-column: span 1.5" onclick="zmenStatCloud('skutky')">+ Dobrý skutok</button>
+            <button class="btn-cloud" style="grid-column: span 1.5" onclick="zmenStatCloud('zle')">+ Zlý skutok</button>
+        </div>
+    </div>
+
+    <div class="food-grid" id="food-container"></div>
+    <hr>
+<h3>Prieskum mesta</h3>
+<div id="category-menu" class="btn-grid"></div> <div id="location-menu" class="btn-grid" style="margin-top: 10px;"></div> <div id="firebase-data-display" style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 8px; display: none;">
+    <strong>Nájdené informácie:</strong>
+    <ul id="keys-list"></ul>
+</div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getDatabase, ref, onValue, update, get } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyBGSfkbYt7tUdyT05BtuLfrDP-gMUmEIp0",
+        authDomain: "dobre-skutky.firebaseapp.com",
+        databaseURL: "https://dobre-skutky-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "dobre-skutky",
+        storageBucket: "dobre-skutky.firebasestorage.app",
+        messagingSenderId: "352022522239",
+        appId: "1:352022522239:web:dd391b1d6e77a673e3524a"
+    };
+    const navData = {
+    "bytovka": { "cislo_domu_1": 0, "cislo_domu_2": 0, "cislo_domu_3": 0, "cislo_domu_4": 0, "cislo_domu_5": 0, "cislo_domu_6": 0, "cislo_domu_7": 0, "cislo_domu_8": 0, "cislo_domu_9": 0, "cislo_domu_10": 0, "cislo_domu_11": 0, "cislo_domu_12": 0, "cislo_domu_13": 0, "cislo_domu_14": 0, "cislo_domu_15": 0, "cislo_domu_16": 0 },
+    "Dom": { "cislo_domu_17": 0, "cislo_domu_18": 0, "cislo_domu_19": 0, "cislo_domu_20": 0, "cislo_domu_21": 0, "cislo_domu_22": 0, "cislo_domu_23": 0, "cislo_domu_24": 0, "cislo_domu_25": 0, "cislo_domu_26": 0, "cislo_domu_27": 0, "cislo_domu_28": 0, "cislo_domu_29": 0, "cislo_domu_30": 0, "cislo_domu_31": 0, "cislo_domu_32": 0, "cislo_domu_33": 0, "cislo_domu_34": 0, "cislo_domu_35": 0, "cislo_domu_36": 0, "cislo_domu_37": 0, "cislo_domu_38": 0, "cislo_domu_39": 0, "cislo_domu_40": 0, "cislo_domu_41": 0, "cislo_domu_42": 0, "cislo_domu_43": 0, "cislo_domu_44": 0, "cislo_domu_45": 0, "cislo_domu_46": 0 },
+    "kostol": { "sv_Mikulasa": 0, "Aniela_Strazneho": 0 },
+    "Krcma": { "U_opiteho_mnicha": 0, "V_zatoke": 0, "U_Barcaka": 0, "Trinity": 0 },
+    "Obchod": { "coop_jednota_Tempo": 0, "coop_jednota_supermarket": 0, "Lidl": 0, "Tesco": 0, "Kaufland": 0 },
+    "Skola": { "sukromne_gymnazium": 0, "zakladna_skola": 0, "materska_skola": 0 },
+    "Pofiderny_podnik": { "U_ruzovej_kocicky": 0, "Kasino": 0, "Raj_na_zemi": 0 },
+    "Nemocnica": { "V_nemocnica": 0, "C_nemocnica": 0 },
+    "Zrúcanina": { "pozostatok_hradu": 0, "opusteny_dom": 0, "stara_skola": 0 },
+    "zoo": { "Zoo": 0 },
+    "divadlo": { "divadlo": 0 },
+    "agrochov": { "Agrochov": 0 }
+};
+
+// Inicializácia hlavného menu
+function renderCategoryMenu() {
+    const container = document.getElementById('category-menu');
+    Object.keys(navData).forEach(cat => {
+        const btn = document.createElement('button');
+        btn.innerText = cat.replace('_', ' ');
+        btn.onclick = () => renderLocationMenu(cat);
+        container.appendChild(btn);
+    });
+}
+
+// Zobrazenie pod-možností (napr. čísla domov)
+function renderLocationMenu(category) {
+    const container = document.getElementById('location-menu');
+    container.innerHTML = ''; // Vyčistiť predchádzajúce
+    
+    Object.keys(navData[category]).forEach(loc => {
+        const btn = document.createElement('button');
+        btn.style.background = "#6c757d";
+        btn.innerText = loc.replace('_', ' ');
+        btn.onclick = () => fetchLocationKeys(category, loc);
+        container.appendChild(btn);
+    });
+}
+const stavy = ["nesplnené", "plní sa", "splnené"];
+const farby = ["#28a745", "#ffc107", "#dc3545"]; // Zelená, Oranžová, Červená
+/*
+async function fetchLocationKeys(category, location) {
+    const path = `${category}/${location}`;
+    const locationRef = ref(db, path);
+    
+    try {
+        const snapshot = await get(locationRef);
+        const dataDisplay = document.getElementById('firebase-data-display');
+        const list = document.getElementById('keys-list');
+        list.innerHTML = '';
+        
+        if (snapshot.exists()) {
+            const data = snapshot.val();
+            // Prevedieme objekt na pole [kľúč, hodnota]
+            const entries = Object.entries(data);
+
+            entries.slice(0, 5).forEach(([key, value]) => {
+                const li = document.createElement('li');
+                // Zobrazíme kľúč aj hodnotu (napr. "Uloha 1: 50")
+                li.innerHTML = `<strong>${key.replace(/_/g, ' ')}:</strong> ${value}`;
+                list.appendChild(li);
+            });
+            dataDisplay.style.display = 'block';
+        } else {
+            list.innerHTML = '<li>V tejto budove sa nič nenachádza.</li>';
+            dataDisplay.style.display = 'block';
+        }
+    } catch (error) {
+        console.error("Chyba pri načítaní z Firebase:", error);
+        alert("Nepodarilo sa načítať dáta. Skontroluj konzolu.");
+    }
+}
+*/
+async function fetchLocationKeys(category, location) {
+    // Cesta musí presne zodpovedať tvojej štruktúre (podľa obrázka bez 'druzinky/')
+    const path = `${category}/${location}`;
+    const locationRef = ref(db, path);
+    
+    try {
+        const snapshot = await get(locationRef);
+        const dataDisplay = document.getElementById('firebase-data-display');
+        const list = document.getElementById('keys-list');
+        list.innerHTML = '';
+        
+        if (snapshot.exists()) {
+            const data = snapshot.val();
+            const entries = Object.entries(data);
+
+            entries.slice(0, 5).forEach(([key, value]) => {
+                const li = document.createElement('li');
+                li.style.marginBottom = "15px"; // Trocha miesta medzi úlohami
+                li.style.borderLeft = `4px solid ${farby[value] || "#ccc"}`;
+                // 1. Mapovanie čísla na text (0, 1, 2)
+                const stavText = stavy[value] || "neznámy stav";
+                
+                // 2. Vytvorenie popisu úlohy
+                const infoDiv = document.createElement('div');
+                infoDiv.innerHTML = `<strong>${key.replace(/_/g, ' ')}:</strong> ${stavText}`;
+                li.appendChild(infoDiv);
+
+                // 3. Vytvorenie tlačidla pre zmenu (modulo 3)
+                const btn = document.createElement('button');
+                btn.innerText = "Zmeniť stav";
+                btn.style.marginTop = "5px";
+                btn.style.fontSize = "0.8rem";
+                btn.style.background = "#ffc107"; // Žltá farba pre akciu
+                btn.style.color = "#000";
+
+                btn.onclick = async () => {
+                    // Výpočet novej hodnoty: (súčasná + 1) % 3
+                    const novaHodnota = (Number(value) + 1) % 3;
+                    
+                    // Cesta k tomuto konkrétnemu kľúču
+                    const itemRef = ref(db, `${path}/${key}`);
+                    
+                    try {
+                        await update(ref(db, path), { [key]: novaHodnota });
+                        // Po úspešnom update znovu načítame zoznam, aby sa prepísal text
+                        fetchLocationKeys(category, location);
+                    } catch (e) {
+                        console.error("Chyba pri update:", e);
+                    }
+                };
+
+                li.appendChild(btn);
+                list.appendChild(li);
+            });
+            dataDisplay.style.display = 'block';
+        } else {
+            list.innerHTML = '<li>V tejto budove sa nič nenachádza.</li>';
+            dataDisplay.style.display = 'block';
+        }
+    } catch (error) {
+        console.error("Chyba pri načítaní:", error);
+    }
+}
+// Spustiť pri načítaní
+renderCategoryMenu();
+
+    // Inicializácia
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    // 1. Získanie ID družinky z URL (všetko za posledným /)
+    const params = new URLSearchParams(window.location.search);
+    var teamId = params.get("id");
+
+    if (!teamId || teamId.trim() === "") {
+        teamId = window.prompt("Nebolo zadané ID družinky. Zadaj názov svojej družinky (bez medzier):");
+        
+        // Ak používateľ nič nezadá alebo stlačí zrušiť, priradíme mu meno 'Host'
+        if (!teamId || teamId.trim() === "") {
+            teamId = "Host_" + Math.floor(Math.random() * 1000);
+            alert("Nebolo zadané žiadne meno. Tvoje dočasné ID je: " + teamId);
+        }
+
+        // DOBROVOĽNÉ: Toto pridá ID do URL adresy v prehliadači, 
+        // takže pri refreshi sa už znova nepýta.
+        const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?id=' + teamId;
+        window.history.pushState({path:newUrl}, '', newUrl);
+    }
+    document.getElementById('team-display').innerText = "Družinka: " + teamId;
+/*
+    // Lokálne staty
+    let localStats = {
+        energia: 100,
+        zdravie: 100,
+        rychlost: 5
+    };
+
+    // Cloud staty (na začiatku 0)
+    let cloudStats = {
+        skutky: 0,
+        zle: 0
+    };*/
+    // Vymaž staré localStats a cloudStats a daj tam toto:
+let stats = {
+    energia: 100,
+    zdravie: 100,
+    rychlost: 5,
+    skutky: 0,
+    zle: 0
+};
+
+    // NAČÍTANIE LOKÁLNYCH STATOV
+    const saved = localStorage.getItem('rpg_local_stats');
+    //if (saved) localStats = JSON.parse(saved);
+
+    // NAČÍTANIE CLOUD STATOV (Firebase)
+    /*
+    const cloudRef = ref(db, 'druzinky/' + teamId);
+    onValue(cloudRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+            cloudStats.skutky = data.skutky || 0;
+            cloudStats.zle = data.zle || 0;
+            updateUI();
+        }
+    });*/
+    const cloudRef = ref(db, 'druzinky/' + teamId);
+onValue(cloudRef, (snapshot) => {
+    const data = snapshot.val();
+    if (data) {
+        // Skombinujeme predvolené hodnoty s tými z Firebase (ak nejaké chýbajú, použijú sa tie z objektu stats)
+        stats = { ...stats, ...data };
+        updateUI();
+    }
+});
+
+    function updateUI() {
+        // Hranice pre zdravie
+        if (stats.zdravie > 100) stats.zdravie = 100;
+        if (stats.zdravie < 0) stats.zdravie = 0;
+
+        // Prepísanie textov
+        document.getElementById('val-energia').innerText = stats.energia.toFixed(1);
+        document.getElementById('val-zdravie').innerText = stats.zdravie.toFixed(1);
+        document.getElementById('val-rychlost').innerText = stats.rychlost.toFixed(1);
+        document.getElementById('val-skutky').innerText = stats.skutky;
+        document.getElementById('val-zle').innerText = stats.zle;
+        let nakladyNaKrok = (10 * 100) / (stats.zdravie * stats.rychlost);
+    let maxKroky = Math.floor(stats.energia / nakladyNaKrok);
+    
+    // Ak by boli štatistiky 0, aby to nehádzalo Infinity
+    document.getElementById('val-max-kroky').innerText = isFinite(maxKroky) ? maxKroky : 0;
+
+        localStorage.setItem('rpg_local_stats', JSON.stringify(stats));
+    }
+
+    // Funkcie prístupné z HTML (window. aby fungovali s type="module")
+    /*window.urobKrok = function() {
+        if (localStats.zdravie <= 0 || localStats.rychlost <= 0) {
+            alert("Nedostatočné štatistiky na krok!");
+            return;
+        }
+        // Vzorec: 10 * 100 / (Z * R)
+        let naklady = (10 * 100) / (localStats.zdravie * localStats.rychlost);
+        localStats.energia -= naklady;
+        updateUI();
+    };*/
+    window.urobKrok = function() {
+    if (stats.zdravie <= 0 || stats.rychlost <= 0) {
+        alert("Zomrel si alebo si príliš pomalý!");
+        return;
+    }
+    let naklady = (10 * 100) / (stats.zdravie * stats.rychlost);
+    
+    // Pošleme update do Firebase
+    update(ref(db, 'druzinky/' + teamId), {
+        energia: stats.energia - naklady
+    });
+};
+/*
+    window.zmenStat = function(typ) {
+        const val = parseFloat(document.getElementById('input-hodnota').value);
+        if (isNaN(val)) return;
+        localStats[typ] += val;
+        updateUI();
+    };*/
+    window.zmenStat = function(typ) {
+    const val = parseFloat(document.getElementById('input-hodnota').value);
+    if (isNaN(val)) return;
+    
+    // Dynamicky vypočítame novú hodnotu a pošleme ju online
+    const novaHodnota = (stats[typ] || 0) + val;
+    update(ref(db, 'druzinky/' + teamId), { [typ]: novaHodnota });
+};
+
+    window.zmenStatCloud = function(typ) {
+        const val = parseFloat(document.getElementById('input-hodnota').value);
+        if (isNaN(val)) return;
+        
+        const novahodnota = stats[typ] + val;
+        const updates = {};
+        updates[typ] = novahodnota;
+        
+        update(ref(db, 'druzinky/' + teamId), updates);
+    };
+
+    // Jedlá
+    const jedla = [
+        { nazov: "Alaska", e: 5, z: -1 }, { nazov: "Jablko", e: 10, z: 1 },
+        { nazov: "Marlenka", e: 10, z: -1 }, { nazov: "Chlieb", e: 10, z: 0 },
+        { nazov: "Kačka s ryžou", e: 25, z: -2 }, { nazov: "Zeleninový šalát", e: 5, z: 5 },
+        { nazov: "Energeťák", e: 50, z: -5 }, { nazov: "Segedínsky guľáš", e: 15, z: 2 },
+        { nazov: "Víno", e: 5, z: -2 }, { nazov: "Ovocie Goji", e: -5, z: 10 }
+    ];
+
+    const foodContainer = document.getElementById('food-container');
+    jedla.forEach(j => {
+        const btn = document.createElement('button');
+        btn.className = 'food-btn';
+        btn.innerText = `${j.nazov} (${j.e}E, ${j.z}Z)`;
+btn.onclick = () => {
+    update(ref(db, 'druzinky/' + teamId), {
+        energia: stats.energia + j.e,
+        zdravie: stats.zdravie + j.z
+    });
+};
+        foodContainer.appendChild(btn);
+    });
+
+    updateUI();
+</script>
+
+</body>
+</html>
